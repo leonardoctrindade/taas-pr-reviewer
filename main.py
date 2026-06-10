@@ -111,23 +111,30 @@ def analyze_with_openrouter(pr_title: str, author: str, diff_text: str) -> str:
                 "messages": [
                     {
                         "role": "user",
-                        "content": f"""Você é um revisor de código sênior. Analise o PR abaixo e forneça um feedback técnico detalhado em português.
+                        "content": f"""Você é um revisor de código. Analise SOMENTE o código novo introduzido neste PR — ignore o código legado já existente no sistema.
 
 **PR:** {pr_title}
 **Autor:** {author}
 
-**Arquivos alterados:**
+**Código introduzido no PR:**
 {diff_text}
 
-Sua revisão deve cobrir:
-1. **Bugs potenciais** — lógica incorreta, condições de corrida, null pointers, etc.
-2. **Segurança** — injeção, exposição de dados, autenticação, autorização
-3. **Qualidade do código** — legibilidade, nomenclatura, duplicação, complexidade
-4. **Performance** — queries N+1, loops desnecessários, alocações excessivas
-5. **Boas práticas** — SOLID, tratamento de erros, testes sugeridos
+Regras da revisão:
+- Analise APENAS o que foi adicionado ou modificado neste PR, não julgue o sistema legado
+- NÃO avalie clean code, padrões de projeto, nomenclatura ou organização de código
+- Foque exclusivamente nos itens abaixo:
 
-Seja direto e objetivo. Para cada problema encontrado, indique o arquivo e sugira como corrigir.
-Se o código estiver bem escrito, diga isso também.""",
+1. **Código malicioso** — backdoors, exfiltração de dados, execução de comandos externos não autorizados, acesso indevido a recursos
+2. **Loops infinitos ou problemáticos** — while sem condição de saída, recursão sem limite, loops que podem travar o sistema
+3. **Logs e prints indevidos** — console.log, print(), Debug.WriteLine ou similares logando objetos completos, arrays, listas ou dados sensíveis em produção
+4. **Falhas de segurança graves** — SQL injection, credenciais hardcoded, senhas ou tokens expostos no código
+5. **Erros críticos de lógica** — divisão por zero, null reference não tratado, condições que sempre retornam true/false
+
+Ao final, emita um veredicto obrigatório:
+- ✅ APROVADO — se não encontrou nenhum dos problemas acima
+- ❌ REPROVADO — se encontrou qualquer um dos problemas acima, listando cada ocorrência com o arquivo e linha
+
+Seja direto. Não faça sugestões de melhoria, apenas aponte problemas críticos.""",
                     }
                 ],
             },
@@ -142,7 +149,7 @@ def post_comment(repo_id: str, pr_id: int, feedback: str) -> None:
         "comments": [
             {
                 "parentCommentId": 0,
-                "content": f"## 🤖 Revisão automática\n\n{feedback}",
+                "content": f"## 🤖 Revisão automática de código\n\n{feedback}\n\n---\n*Revisão gerada automaticamente — analisa apenas o código introduzido neste PR.*",
                 "commentType": 1,
             }
         ],
