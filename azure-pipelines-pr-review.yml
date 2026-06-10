@@ -27,7 +27,6 @@ steps:
     AUTHOR: $(Build.RequestedFor)
     ORG: systaxsistemas
     PROJECT: TaxEngine
-  arguments: ''
   script: |
     import os, base64, json
     import urllib.request
