@@ -7,6 +7,7 @@ pr:
   paths:
     exclude:
       - azure-pipelines-pr-review.yml
+      - review.py
 
 pool:
   vmImage: 'windows-2022'
@@ -16,7 +17,7 @@ steps:
   inputs:
     versionSpec: '3.11'
 
-- task: PythonScript@0
+- task: CmdLine@2
   displayName: 'Revisao automatica de codigo'
   env:
     OPENROUTER_API_KEY: $(OPENROUTER_API_KEY)
@@ -27,118 +28,4 @@ steps:
     AUTHOR: $(Build.RequestedFor)
     ORG: systaxsistemas
     PROJECT: TaxEngine
-  script: |
-    import os, base64, json
-    import urllib.request
-    import urllib.error
-
-    PAT       = os.environ["ADO_PAT"]
-    OR_KEY    = os.environ["OPENROUTER_API_KEY"]
-    PR_ID     = os.environ["PR_ID"]
-    REPO_ID   = os.environ["REPO_ID"]
-    PR_TITLE  = os.environ.get("PR_TITLE", "")
-    AUTHOR    = os.environ.get("AUTHOR", "")
-    ORG       = os.environ["ORG"]
-    PROJECT   = os.environ["PROJECT"]
-
-    B64 = base64.b64encode(f":{PAT}".encode()).decode()
-    ADO_HDR = {"Authorization": f"Basic {B64}", "Content-Type": "application/json"}
-    BASE = f"https://dev.azure.com/{ORG}/{PROJECT}/_apis"
-
-    def ado_get(url):
-        req = urllib.request.Request(url, headers=ADO_HDR)
-        with urllib.request.urlopen(req) as r:
-            return json.loads(r.read())
-
-    def ado_post(url, body):
-        data = json.dumps(body).encode()
-        req = urllib.request.Request(url, data=data, headers=ADO_HDR, method="POST")
-        with urllib.request.urlopen(req) as r:
-            return json.loads(r.read())
-
-    # Busca iteracoes do PR
-    iters = ado_get(f"{BASE}/git/repositories/{REPO_ID}/pullRequests/{PR_ID}/iterations?api-version=7.1")
-    latest = iters["value"][-1]["id"]
-
-    # Busca arquivos alterados
-    changes = ado_get(f"{BASE}/git/repositories/{REPO_ID}/pullRequests/{PR_ID}/iterations/{latest}/changes?api-version=7.1")
-
-    diff_parts = []
-    for change in changes.get("changeEntries", [])[:20]:
-        item    = change.get("item", {})
-        path    = item.get("path", "")
-        ctype   = change.get("changeType", "")
-        oid     = item.get("objectId")
-
-        if ctype == "delete" or not oid:
-            diff_parts.append(f"### {path} ({ctype})")
-            continue
-
-        try:
-            req = urllib.request.Request(
-                f"{BASE}/git/repositories/{REPO_ID}/blobs/{oid}?api-version=7.1",
-                headers={**ADO_HDR, "Accept": "text/plain"}
-            )
-            with urllib.request.urlopen(req) as r:
-                content = r.read().decode("utf-8", errors="replace")[:3000]
-            diff_parts.append(f"### {path} ({ctype})\n```\n{content}\n```")
-        except Exception as e:
-            diff_parts.append(f"### {path} ({ctype}) - nao disponivel: {e}")
-
-    diff_text = "\n\n".join(diff_parts) if diff_parts else "Nenhum arquivo encontrado."
-
-    # Chama OpenRouter
-    prompt = f"""Você é um revisor de código. Analise SOMENTE o código novo introduzido neste PR — ignore o código legado já existente no sistema.
-
-**PR:** {PR_TITLE}
-**Autor:** {AUTHOR}
-
-**Código introduzido no PR:**
-{diff_text}
-
-Regras da revisão:
-- Analise APENAS o que foi adicionado ou modificado neste PR, não julgue o sistema legado
-- NÃO avalie clean code, padrões de projeto, nomenclatura ou organização de código
-- Foque exclusivamente nos itens abaixo:
-
-1. **Código malicioso** — backdoors, exfiltração de dados, execução de comandos externos não autorizados
-2. **Loops infinitos ou problemáticos** — while sem condição de saída, recursão sem limite
-3. **Logs e prints indevidos** — console.log, print(), Debug.WriteLine logando objetos completos, arrays ou dados sensíveis
-4. **Falhas de segurança graves** — SQL injection, credenciais hardcoded, tokens expostos
-5. **Erros críticos de lógica** — divisão por zero, null reference não tratado
-
-Ao final, emita obrigatoriamente:
-- ✅ APROVADO — se não encontrou nenhum dos problemas acima
-- ❌ REPROVADO — se encontrou qualquer problema, listando arquivo e linha
-
-Seja direto. Não faça sugestões de melhoria, apenas aponte problemas críticos."""
-
-    payload = json.dumps({
-        "model": "openai/gpt-4.1-mini",
-        "max_tokens": 2048,
-        "messages": [{"role": "user", "content": prompt}]
-    }).encode()
-
-    req = urllib.request.Request(
-        "https://openrouter.ai/api/v1/chat/completions",
-        data=payload,
-        headers={"Authorization": f"Bearer {OR_KEY}", "Content-Type": "application/json"},
-        method="POST"
-    )
-    with urllib.request.urlopen(req, timeout=60) as r:
-        feedback = json.loads(r.read())["choices"][0]["message"]["content"]
-
-    # Posta comentario no PR
-    comment_body = {
-        "comments": [{
-            "parentCommentId": 0,
-            "content": f"## 🤖 Revisão automática de código\n\n{feedback}\n\n---\n*Analisa apenas o código introduzido neste PR.*",
-            "commentType": 1
-        }],
-        "status": 1
-    }
-    ado_post(
-        f"{BASE}/git/repositories/{REPO_ID}/pullRequests/{PR_ID}/threads?api-version=7.1",
-        comment_body
-    )
-    print(f"Comentario postado no PR #{PR_ID}")
+  script: python review.py
