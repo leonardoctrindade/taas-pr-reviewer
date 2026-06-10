@@ -1,13 +1,18 @@
-import os, base64, json, urllib.request
+import os, sys, base64, json, urllib.request, urllib.error
 
 PAT      = os.environ["ADO_PAT"]
 OR_KEY   = os.environ["OPENROUTER_API_KEY"]
-PR_ID    = os.environ["PR_ID"]
+PR_ID    = os.environ.get("PR_ID", "").strip()
 REPO_ID  = os.environ["REPO_ID"]
 PR_TITLE = os.environ.get("PR_TITLE", "")
 AUTHOR   = os.environ.get("AUTHOR", "")
 ORG      = os.environ["ORG"]
 PROJECT  = os.environ["PROJECT"]
+
+# Execucao manual (fora de um PR) nao tem PR_ID - encerra sem erro
+if not PR_ID or PR_ID == "$(System.PullRequest.PullRequestId)":
+    print("Sem PR_ID - execucao manual ignorada. Este pipeline so roda em Pull Requests.")
+    sys.exit(0)
 
 B64 = base64.b64encode(f":{PAT}".encode()).decode()
 HDR = {"Authorization": f"Basic {B64}", "Content-Type": "application/json"}
@@ -15,14 +20,22 @@ BASE = f"https://dev.azure.com/{ORG}/{PROJECT}/_apis"
 
 def ado_get(url):
     req = urllib.request.Request(url, headers=HDR)
-    with urllib.request.urlopen(req) as r:
-        return json.loads(r.read())
+    try:
+        with urllib.request.urlopen(req) as r:
+            return json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        print(f"Erro GET {url}: {e.code} - {e.read().decode(errors='replace')}")
+        raise
 
 def ado_post(url, body):
     data = json.dumps(body).encode()
     req = urllib.request.Request(url, data=data, headers=HDR, method="POST")
-    with urllib.request.urlopen(req) as r:
-        return json.loads(r.read())
+    try:
+        with urllib.request.urlopen(req) as r:
+            return json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        print(f"Erro POST {url}: {e.code} - {e.read().decode(errors='replace')}")
+        raise
 
 iters = ado_get(f"{BASE}/git/repositories/{REPO_ID}/pullRequests/{PR_ID}/iterations?api-version=7.1")
 latest = iters["value"][-1]["id"]
@@ -86,8 +99,12 @@ req = urllib.request.Request(
     headers={"Authorization": f"Bearer {OR_KEY}", "Content-Type": "application/json"},
     method="POST"
 )
-with urllib.request.urlopen(req, timeout=60) as r:
-    feedback = json.loads(r.read())["choices"][0]["message"]["content"]
+try:
+    with urllib.request.urlopen(req, timeout=60) as r:
+        feedback = json.loads(r.read())["choices"][0]["message"]["content"]
+except urllib.error.HTTPError as e:
+    print(f"Erro OpenRouter: {e.code} - {e.read().decode(errors='replace')}")
+    raise
 
 comment_body = {
     "comments": [{
