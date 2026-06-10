@@ -17,7 +17,7 @@ steps:
   inputs:
     versionSpec: '3.11'
 
-- task: CmdLine@2
+- script: python review.py
   displayName: 'Revisao automatica de codigo'
   env:
     OPENROUTER_API_KEY: $(OPENROUTER_API_KEY)
@@ -28,4 +28,3 @@ steps:
     AUTHOR: $(Build.RequestedFor)
     ORG: systaxsistemas
     PROJECT: TaxEngine
-  script: python review.py
