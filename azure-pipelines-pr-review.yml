@@ -1,5 +1,11 @@
 trigger: none
 
+parameters:
+- name: prId
+  displayName: 'PR ID (apenas para teste manual)'
+  type: string
+  default: ''
+
 pr:
   branches:
     include:
@@ -23,6 +29,7 @@ steps:
     OPENROUTER_API_KEY: $(OPENROUTER_API_KEY)
     ADO_PAT: $(ADO_PAT)
     PR_ID: $(System.PullRequest.PullRequestId)
+    MANUAL_PR_ID: ${{ parameters.prId }}
     REPO_ID: $(Build.Repository.ID)
     PR_TITLE: $(System.PullRequest.SourceBranch)
     AUTHOR: $(Build.RequestedFor)

@@ -9,9 +9,12 @@ AUTHOR   = os.environ.get("AUTHOR", "")
 ORG      = os.environ["ORG"]
 PROJECT  = os.environ["PROJECT"]
 
-# Execucao manual (fora de um PR) nao tem PR_ID - encerra sem erro
-if not PR_ID or PR_ID == "$(System.PullRequest.PullRequestId)":
-    print("Sem PR_ID - execucao manual ignorada. Este pipeline so roda em Pull Requests.")
+# Em execucao manual nao ha PR automatico - usa o PR_ID passado como parametro
+if not PR_ID or PR_ID.startswith("$("):
+    PR_ID = os.environ.get("MANUAL_PR_ID", "").strip()
+
+if not PR_ID:
+    print("Sem PR_ID. Em PR real ele e automatico; em teste manual passe o parametro prId.")
     sys.exit(0)
 
 B64 = base64.b64encode(f":{PAT}".encode()).decode()
